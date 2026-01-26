@@ -121,6 +121,8 @@ mini-redis复刻Redis的INCR指令:<https://mp.weixin.qq.com/s/BwACqJvE8krYA-dgl
 
 聊聊我基于dict优化mini-redis数据性能这件事:<https://mp.weixin.qq.com/s/H0M3ZD6o7bu4yiLiyyd9Kw>
 
+基于AI IDE的mini-redis列表操作测试用例设计与功能验收:<https://mp.weixin.qq.com/s/fpWU_MgOq-1je5TijtBGHQ>
+
 ## 关于我
 
 你好，我是 **SharkChili** ，禅与计算机程序设计艺术布道者，希望我的理念对您有所启发。
