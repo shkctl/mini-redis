@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"log"
 	"net"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 const (
@@ -73,6 +77,12 @@ const (
 
 	ZSKIPLIST_MAXLEVEL = 32
 	ZSKIPLIST_P        = 0.25
+
+	// Slowlog相关常量
+	SLOWLOG_ENTRY_MAX_ARGC                 = 32    // 最大参数数量
+	SLOWLOG_ENTRY_MAX_STRING               = 128   // 最大参数字符串长度
+	CONFIG_DEFAULT_SLOWLOG_LOG_SLOWER_THAN = 10000 // 默认阈值10毫秒
+	CONFIG_DEFAULT_SLOWLOG_MAX_LEN         = 128   // 默认最多128条
 )
 
 type redisServer struct {
@@ -91,6 +101,12 @@ type redisServer struct {
 	commands map[string]redisCommand
 	db       []redisDb
 	dbnum    int
+
+	// Slowlog相关字段
+	slowlog              *list // 复用现有adlist，参考: list *slowlog
+	slowlogEntryId       int64 // 全局递增ID，参考: slowlog_entry_id
+	slowlogLogSlowerThan int64 // 阈值（微秒），参考: slowlog_log_slower_than
+	slowlogMaxLen        int64 // 最大记录数，参考: slowlog_max_len
 }
 
 type robj = redisObject
@@ -160,11 +176,131 @@ func initServer() {
 		server.db[j].dict = *dictCreate(&dbDictType, nil)
 		server.db[j].expires = *dictCreate(&dbDictType, nil)
 	}
+
+	// 初始化slowlog
+	slowlogInit()
 }
 
+// loadServerConfig - 加载服务器配置
+// 优先从 redis.conf 文件读取配置，若文件不存在或配置项为空则使用默认值
 func loadServerConfig() {
 	log.Println("load redis server config")
 	server.dbnum = REDIS_DEFAULT_DBNUM
+
+	// 先设置默认值
+	server.slowlogLogSlowerThan = CONFIG_DEFAULT_SLOWLOG_LOG_SLOWER_THAN
+	server.slowlogMaxLen = CONFIG_DEFAULT_SLOWLOG_MAX_LEN
+
+	// 尝试从配置文件读取
+	configFile := "redis.conf"
+	if _, err := os.Stat(configFile); err == nil {
+		loadConfigFromFile(configFile)
+	} else {
+		log.Printf("Config file %s not found, using default values", configFile)
+	}
+}
+
+// loadConfigFromFile - 从配置文件加载配置
+func loadConfigFromFile(filename string) {
+	file, err := os.Open(filename)
+	if err != nil {
+		log.Printf("Error opening config file: %v", err)
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	lineNum := 0
+
+	for scanner.Scan() {
+		lineNum++
+		line := strings.TrimSpace(scanner.Text())
+
+		// 跳过空行和注释行
+		if len(line) == 0 || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// 解析配置项
+		if err := parseConfigLine(line, lineNum); err != nil {
+			log.Printf("Config parse error at line %d: %v", lineNum, err)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		log.Printf("Error reading config file: %v", err)
+	}
+
+	log.Printf("Loaded config from %s: slowlog-log-slower-than=%d, slowlog-max-len=%d",
+		filename, server.slowlogLogSlowerThan, server.slowlogMaxLen)
+}
+
+// parseConfigLine - 解析单行配置
+func parseConfigLine(line string, lineNum int) error {
+	// 分割配置项和值
+	parts := strings.Fields(line)
+	if len(parts) < 2 {
+		return fmt.Errorf("invalid config format: %s", line)
+	}
+
+	key := strings.ToLower(parts[0])
+	value := parts[1]
+
+	// 处理带引号的值
+	if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+		value = value[1 : len(value)-1]
+	}
+
+	switch key {
+	case "slowlog-log-slower-than":
+		if value == "" {
+			return fmt.Errorf("slowlog-log-slower-than value cannot be empty")
+		}
+		val, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid slowlog-log-slower-than value: %s", value)
+		}
+		server.slowlogLogSlowerThan = val
+		log.Printf("Config loaded: slowlog-log-slower-than = %d", val)
+
+	case "slowlog-max-len":
+		if value == "" {
+			return fmt.Errorf("slowlog-max-len value cannot be empty")
+		}
+		val, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid slowlog-max-len value: %s", value)
+		}
+		if val <= 0 {
+			return fmt.Errorf("slowlog-max-len must be positive: %d", val)
+		}
+		server.slowlogMaxLen = val
+		log.Printf("Config loaded: slowlog-max-len = %d", val)
+
+	case "port":
+		if value == "" {
+			return fmt.Errorf("port value cannot be empty")
+		}
+		val, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("invalid port value: %s", value)
+		}
+		server.port = val
+		log.Printf("Config loaded: port = %d", val)
+
+	case "databases":
+		if value == "" {
+			return fmt.Errorf("databases value cannot be empty")
+		}
+		val, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("invalid databases value: %s", value)
+		}
+		server.dbnum = val
+		log.Printf("Config loaded: databases = %d", val)
+	}
+
+	return nil
 }
 
 func acceptTcpHandler(conn net.Conn) {
@@ -271,7 +407,19 @@ func processCommand(c *redisClient) {
 }
 
 func call(c *redisClient, flags int) {
+	// 记录开始时间（微秒）
+	start := time.Now().UnixMicro()
+
+	// 执行命令
 	c.cmd.proc(c)
+
+	// 计算执行时长
+	duration := time.Now().UnixMicro() - start
+
+	// 记录慢查询（SLOWLOG 命令本身不记录）
+	if flags&REDIS_CALL_SLOWLOG != 0 && c.cmd.name != "SLOWLOG" {
+		slowlogPushEntryIfNeeded(c.argv, int(c.argc), duration)
+	}
 
 	//todo aof use flags
 }

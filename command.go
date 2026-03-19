@@ -41,6 +41,8 @@ var redisCommandTable = []redisCommand{
 	{name: "INCR", proc: incrCommand, arity: 2, sflag: "wmF", flag: 0},
 	{name: "DECR", proc: decrCommand, arity: 2, sflag: "wmF", flag: 0},
 	{name: "SCAN", proc: scanCommand, arity: -2, sflag: "rR", flag: 0},
+	// arity: -2 表示至少2个参数（SLOWLOG + 子命令），参数数量不固定
+	{name: "SLOWLOG", proc: slowlogCommand, arity: -2, sflag: "a", flag: 0},
 }
 var shared sharedObjectsStruct
 
