@@ -53,6 +53,9 @@ PONG
 - 支持客户端键入PING指令感知mini-redis是否可用。
 - 完成GET、SET指令指令解析和常规用法
 - 完成列表LINDEX、LPOP、RPUSH、LRANGE指令,可作为内存消息队列
+- 完成哈希HSET、HMSET、HSETNX、HGET、HMGET、HGETALL、HDEL指令开发
+- 完成有序集合ZADD、ZREM、ZRANGE、ZREVRANGE、ZRANGEBYSCORE等指令开发
+- 完成慢查询日志（Slowlog）功能，支持SLOWLOG GET/RESET/LEN指令
 
 
 后续开发计划:
@@ -65,6 +68,7 @@ PONG
 + [x] 列表操作LINDEX、LPOP、RPUSH、LRANGE指令开发
 + [x] 字典操作HSET、HMSET、HSETNX、HGET、HMGET、HGETALL、HDEL指令开发
 + [x] 有序集合所有操作指令开发
++ [x] 慢查询日志（Slowlog）功能开发
 + [ ] `AOF`持久化和重载机制
 + [ ] `LRU`缓存置换算法
 + [ ] 性能压测
@@ -73,23 +77,30 @@ PONG
 ## 如何阅读源码
 
 本项目目录结构为:
-- `adlist.go` : redis底层双向链表实现 
-- `adlist_test.go` : 双向链表测试单元 
+- `adlist.go` : redis底层双向链表实现
+- `adlist_test.go` : 双向链表测试单元
 - `client.go` : 处理redis-cli请求的客户端对象
 - `command.go` : redis所有操作指令实现
+- `command_test.go` : 命令测试单元
 - `db.go` : redis内存数据库
 - `dict.go` : 哈希对象操作实现
+- `dict_test.go` : 字典测试单元
 - `networking.go` : 网络操作函数集
 - `object.go` : redis对象创建函数
 - `redis.conf` : 配置文件
 - `redis.go` : redis服务端
+- `server.go` : 服务器核心逻辑
+- `slowlog.go` : 慢查询日志功能实现
+- `slowlog_test.go` : 慢查询日志测试单元
 - `t_hash.go` : 针对redis对象的哈希操作函数
 - `t_list.go` : 基于adlist双向链表对于redis对象的链表操作函数
+- `t_zset.go` : 有序集合操作函数实现
+- `t_zset_test.go` : 有序集合测试单元
 - `util.go` : mini-redis工具类
-- `main.go` : mini-redis启动入口 
-- `go.mod` 
-- `build-windows.sh` : Windows下程序启动脚本 
-- `build-linux.sh` : Linux启动脚本 
+- `main.go` : mini-redis启动入口
+- `go.mod`
+- `build-windows.sh` : Windows下程序启动脚本
+- `build-linux.sh` : Linux启动脚本
 - `README.md` 
 
 
