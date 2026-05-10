@@ -416,8 +416,8 @@ func call(c *redisClient, flags int) {
 	// 计算执行时长
 	duration := time.Now().UnixMicro() - start
 
-	// 记录慢查询（SLOWLOG 命令本身不记录）
-	if flags&REDIS_CALL_SLOWLOG != 0 && c.cmd.name != "SLOWLOG" {
+	// 记录慢查询
+	if flags&REDIS_CALL_SLOWLOG != 0 {
 		slowlogPushEntryIfNeeded(c.argv, int(c.argc), duration)
 	}
 
