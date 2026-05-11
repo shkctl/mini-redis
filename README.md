@@ -134,6 +134,8 @@ mini-redis复刻Redis的INCR指令:<https://mp.weixin.qq.com/s/BwACqJvE8krYA-dgl
 
 基于AI IDE的mini-redis列表操作测试用例设计与功能验收:<https://mp.weixin.qq.com/s/fpWU_MgOq-1je5TijtBGHQ>
 
+基于 Claude Code 复刻 Redis 慢查询指令实践:<https://mp.weixin.qq.com/s/mt19kS8CMijuCukzCDkIxQ>
+
 ## 关于我
 
 你好，我是 **SharkChili** ，禅与计算机程序设计艺术布道者，希望我的理念对您有所启发。
