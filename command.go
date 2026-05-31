@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -682,96 +683,145 @@ func hdelCommand(c *redisClient) {
 }
 
 func scanCommand(c *redisClient) {
-	var cursor uint64
-	if !parseScanCursorOrReply(c, c.argv[1], &cursor) {
+	var cursor int64
+	if parseScanCursorOrReply(c, c.argv[1], &cursor) == C_ERR {
 		return
 	}
 	scanGenericCommand(c, nil, &cursor)
 
 }
 
-func parseScanCursorOrReply(c *redisClient, o *robj, cursor *uint64) bool {
+func parseScanCursorOrReply(c *redisClient, o *robj, cursor *int64) int {
 
 	u, err := strconv.ParseUint((*o.ptr).(string), 10, 64)
 	if err != nil {
 		errReply := "invalid cursor"
 		addReplyError(c, &errReply)
-		return false
+		return C_ERR
 	}
-	*cursor = u
-	return true
+	*cursor = int64(u)
+	return C_OK
 }
 
-func scanGenericCommand(c *redisClient, o *robj, cursor *uint64) {
-	//	keys := listCreate()
-	//	var count int64
-	//	count = 10
-	//	var ht map[string]*robj
-	//
-	//	var i uint64
-	//	//判断是scan还是hscan等标识
-	//	if o == nil {
-	//		i = 2
-	//	} else {
-	//		i = 3
-	//	}
-	//	//参数解析
-	//	for ; i < c.argc; i += 2 {
-	//		j := c.argc - i
-	//		if "count" == (*c.argv[i].ptr).(string) && j >= 2 {
-	//			//解析count的值，若不合法直接执行后置清理
-	//			if !getLongFromObjectOrReply(c, c.argv[i+1], &count, nil) {
-	//				goto cleanup
-	//			}
-	//
-	//			if count < 1 {
-	//				addReply(c, shared.syntaxerr)
-	//				goto cleanup
-	//			}
-	//
-	//		}
-	//	}
-	//	//迭代key值
-	//	ht = c.db.dict
-	//	if ht != nil {
-	//		j := int64(0)
-	//		skip := int64(0)
-	//
-	//		for k := range ht {
-	//			if skip < int64(*cursor) {
-	//				skip++
-	//				continue
-	//			}
-	//			key := interface{}(k)
-	//			listAddNodeTail(keys, &key)
-	//			j++
-	//			if j == count {
-	//				*cursor = uint64(skip + count)
-	//				break
-	//			}
-	//		}
-	//	}
-	//
-	//	addReplyMultiBulkLen(c, 2)
-	//	if listLength(keys) != 0 {
-	//		addReplyLongLong(c, int64(*cursor))
-	//	} else {
-	//		addReplyLongLong(c, 0)
-	//	}
-	//
-	//	addReplyMultiBulkLen(c, listLength(keys))
-	//	for true {
-	//		node := listFirst(keys)
-	//		if node == nil {
-	//			break
-	//		}
-	//		s := (*node.value).(string)
-	//		o := createEmbeddedStringObject(&s, len(s))
-	//		addReplyBulk(c, o)
-	//		listDelNode(keys, node)
-	//	}
-	//
-	//cleanup:
-	//	//清理资源
-	//	listRelease(&keys)
+func scanGenericCommand(c *redisClient, o *robj, cursor *int64) {
+	var i, j int
+	keys := listCreate()
+	var node, nextNode *listNode
+	var re *regexp.Regexp
+
+	var count int64
+	count = 10
+
+	var pat string
+	//var patLen int
+
+	var use_pattern bool
+
+	var ht *dict
+
+	if o == nil {
+		i = 2
+	} else {
+		i = 3
+	}
+
+	for i < int(c.argc) {
+
+		j = int(c.argc) - i
+
+		if strings.EqualFold((*c.argv[i].ptr).(string), "count") && j >= 2 {
+
+			if getLongFromObjectOrReply(c, c.argv[i+1], &count, nil) == false {
+				goto cleanup
+			}
+			if count < 1 {
+				addReply(c, shared.syntaxerr)
+				goto cleanup
+			}
+			i += 2
+		} else if strings.EqualFold((*c.argv[i].ptr).(string), "match") && j >= 2 {
+			pat = (*c.argv[i+1].ptr).(string)
+			//patLen = len(pat)
+
+			if pat == "*" {
+				use_pattern = false
+			} else {
+				use_pattern = true
+				re = regexp.MustCompile(pat)
+			}
+			i += 2
+		} else {
+			addReply(c, shared.syntaxerr)
+			goto cleanup
+		}
+
+	}
+
+	if o == nil {
+		ht = &c.db.dict
+	}
+
+	if ht != nil {
+
+		var privateData [2]any
+		privateData[0] = keys
+		privateData[1] = o
+
+		var maxiterations int64
+		maxiterations = count * 10
+
+		for {
+			*cursor = dictScan(ht, *cursor, scanCallback, privateData)
+			maxiterations--
+
+			if *cursor == 0 || maxiterations <= 0 || listLength(keys) >= count {
+				break
+			}
+
+		}
+
+		node = listFirst(keys)
+		for node != nil {
+			nextNode = listNextNode(node)
+			kobj := (*node.value).(*robj)
+
+			filter := false
+
+			if use_pattern && re.MatchString((*kobj.ptr).(string)) == false {
+
+				filter = true
+			}
+
+			if !filter && expireIfNeeded(c.db, kobj) == 1 {
+				filter = true
+			}
+
+			if filter {
+				listDelNode(keys, node)
+			}
+
+			node = nextNode
+
+		}
+
+	}
+
+	addReplyMultiBulkLen(c, 2)
+	addReplyLongLong(c, *cursor)
+	addReplyMultiBulkLen(c, listLength(keys))
+
+	for {
+
+		if node = listFirst(keys); node == nil {
+			break
+		}
+
+		kobj := (*node.value).(*robj)
+		addReplyBulk(c, kobj)
+		listDelNode(keys, node)
+	}
+
+cleanup:
+	keys = nil
+
 }

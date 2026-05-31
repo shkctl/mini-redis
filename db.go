@@ -95,3 +95,22 @@ func dbOverwrite(db *redisDb, key *robj, val *robj) {
 	}
 	dictReplace(&db.dict, key, val)
 }
+
+func scanCallback(privData [2]any, de *dictEntry) {
+	keys := privData[0].(*list)
+	o := privData[1].(*robj)
+
+	var key, value interface{}
+
+	if o == nil {
+		sdsKey := dictGetKey(de)
+		key = interface{}(sdsKey)
+	}
+
+	listAddNodeTail(keys, &key)
+
+	if value != nil {
+		listAddNodeTail(keys, &value)
+	}
+
+}

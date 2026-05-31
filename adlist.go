@@ -174,6 +174,10 @@ func listFirst(l *list) *listNode {
 
 }
 
+func listNextNode(node *listNode) *listNode {
+	return node.next
+}
+
 func listRelease(l **list) {
 	*l = nil
 }

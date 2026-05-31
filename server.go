@@ -4,6 +4,11 @@ import (
 	"unsafe"
 )
 
+/*Error codes */
+
+const C_OK = 0
+const C_ERR = -1
+
 var dbDictType = dictType{
 	hashFunction:  dictSdsHash,
 	keyDup:        nil,

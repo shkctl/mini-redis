@@ -402,3 +402,103 @@ func _dictNextPower(size uint64) uint64 {
 	}
 	return uint64(i)
 }
+
+func dictGetKey(he *dictEntry) *robj {
+	return he.key
+}
+
+func dictGetVal(he *dictEntry) *robj {
+	return he.val
+}
+
+func dictSize(d *dict) uint64 {
+	return d.ht[0].used + d.ht[1].used
+}
+
+// 反转二进制位
+func rev(v uint64) uint64 {
+	s := uint64(64) // 8 * sizeof(uint64)
+	mask := ^uint64(0)
+	s >>= 1
+	for s > 0 {
+		mask ^= (mask << s)
+		v = ((v >> s) & mask) | ((v << s) & ^mask)
+		s >>= 1
+	}
+	return v
+}
+
+func dictScan(d *dict,
+	v int64,
+	fn func(privData [2]any, de *dictEntry),
+	privData [2]any) int64 {
+
+	var t0, t1 *dictht
+	var de *dictEntry
+	var m0, m1 int64
+
+	if dictSize(d) == 0 {
+		return 0
+	}
+
+	if !dictIsRehashing(d) {
+		t0 = &(d.ht[0])
+		m0 = int64(t0.sizemask)
+
+		de = (*t0.table)[v&m0]
+
+		for de != nil {
+			fn(privData, de)
+			de = de.next
+		}
+
+		v |= ^m0
+
+		v = int64(rev(uint64(v)))
+		v++
+		v = int64(rev(uint64(v)))
+	} else {
+		t0 = &(d.ht[0])
+		t1 = &(d.ht[1])
+
+		if t0.used > t1.used {
+			t1 = &(d.ht[0])
+			t0 = &(d.ht[1])
+		}
+
+		m0 = int64(t0.sizemask)
+		m1 = int64(t1.sizemask)
+
+		de = (*t0.table)[v&m0]
+
+		for de != nil {
+			fn(privData, de)
+			de = de.next
+		}
+
+		for {
+			de = (*t0.table)[v&m1]
+
+			for de != nil {
+				fn(privData, de)
+				de = de.next
+			}
+
+			v |= ^m1
+
+			v |= ^m1
+
+			v = int64(rev(uint64(v)))
+			v++
+			v = int64(rev(uint64(v)))
+
+			if v&(m0^m1) == 0 {
+				break
+			}
+
+		}
+
+	}
+
+	return v
+}
