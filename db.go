@@ -97,16 +97,18 @@ func dbOverwrite(db *redisDb, key *robj, val *robj) {
 }
 
 func scanCallback(privData [2]any, de *dictEntry) {
+	//获取数组0的链表
 	keys := privData[0].(*list)
+	//获取数组1的robj
 	o := privData[1].(*robj)
 
 	var key, value interface{}
-
+	//如果robj为空,说明当前是普通scan函数的调用,直接从dictEntry中获取key
 	if o == nil {
 		sdsKey := dictGetKey(de)
 		key = interface{}(sdsKey)
 	}
-
+	//将key添加到数组0的链表
 	listAddNodeTail(keys, &key)
 
 	if value != nil {

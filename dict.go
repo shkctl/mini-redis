@@ -11,6 +11,14 @@ const DICT_HT_INITIAL_SIZE = 4
 const dict_can_resize = 1
 const dict_force_resize_ratio = 5
 
+/*
+*
+字典元素回调处理函数结构定义:
+1. privData 数组:索引0为存放元素的链表,索引1 额外的redis obj对象
+2. de :当前要处理的键值对
+*/
+type dictScanFunction func(privData [2]any, de *dictEntry)
+
 /**
  * 字典键值对定义
  */
@@ -430,7 +438,7 @@ func rev(v uint64) uint64 {
 
 func dictScan(d *dict,
 	v int64,
-	fn func(privData [2]any, de *dictEntry),
+	fn dictScanFunction,
 	privData [2]any) int64 {
 
 	var t0, t1 *dictht
