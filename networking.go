@@ -33,7 +33,7 @@ func addReplyLongLong(c *redisClient, ll int64) {
 }
 
 func addReplyLongLongWithPrefix(c *redisClient, ll int64, prefix string) {
-	c.conn.Write([]byte(":" + strconv.FormatInt(ll, 10) + "\r\n"))
+	c.conn.Write([]byte(prefix + strconv.FormatInt(ll, 10) + "\r\n"))
 }
 
 func addReplyMultiBulkLen(c *redisClient, length int64) {
@@ -43,4 +43,11 @@ func addReplyMultiBulkLen(c *redisClient, length int64) {
 	} else {
 		addReplyLongLongWithPrefix(c, length, "*")
 	}
+}
+
+// addReplyBulkLongLong 将整数以 RESP bulk string 形式回复
+// 用于 SCAN 等命令返回 cursor:协议要求 `$<len>\r\n<num>\r\n`
+func addReplyBulkLongLong(c *redisClient, ll int64) {
+	s := strconv.FormatInt(ll, 10)
+	c.conn.Write([]byte("$" + strconv.Itoa(len(s)) + *shared.crlf + s + *shared.crlf))
 }

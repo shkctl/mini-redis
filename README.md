@@ -56,6 +56,7 @@ PONG
 - 完成哈希HSET、HMSET、HSETNX、HGET、HMGET、HGETALL、HDEL指令开发
 - 完成有序集合ZADD、ZREM、ZRANGE、ZREVRANGE、ZRANGEBYSCORE等指令开发
 - 完成慢查询日志（Slowlog）功能，支持SLOWLOG GET/RESET/LEN指令
+- 完成键空间扫描SCAN指令,支持MATCH glob匹配与COUNT提示,采用反向二进制游标保证rehash期间安全遍历
 
 
 后续开发计划:
@@ -69,6 +70,7 @@ PONG
 + [x] 字典操作HSET、HMSET、HSETNX、HGET、HMGET、HGETALL、HDEL指令开发
 + [x] 有序集合所有操作指令开发
 + [x] 慢查询日志（Slowlog）功能开发
++ [x] 键空间扫描SCAN指令开发(含MATCH/COUNT)
 + [ ] `AOF`持久化和重载机制
 + [ ] `LRU`缓存置换算法
 + [ ] 性能压测

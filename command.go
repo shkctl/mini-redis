@@ -703,75 +703,89 @@ func parseScanCursorOrReply(c *redisClient, o *robj, cursor *uint64) bool {
 }
 
 func scanGenericCommand(c *redisClient, o *robj, cursor *uint64) {
-	//	keys := listCreate()
-	//	var count int64
-	//	count = 10
-	//	var ht map[string]*robj
-	//
-	//	var i uint64
-	//	//判断是scan还是hscan等标识
-	//	if o == nil {
-	//		i = 2
-	//	} else {
-	//		i = 3
-	//	}
-	//	//参数解析
-	//	for ; i < c.argc; i += 2 {
-	//		j := c.argc - i
-	//		if "count" == (*c.argv[i].ptr).(string) && j >= 2 {
-	//			//解析count的值，若不合法直接执行后置清理
-	//			if !getLongFromObjectOrReply(c, c.argv[i+1], &count, nil) {
-	//				goto cleanup
-	//			}
-	//
-	//			if count < 1 {
-	//				addReply(c, shared.syntaxerr)
-	//				goto cleanup
-	//			}
-	//
-	//		}
-	//	}
-	//	//迭代key值
-	//	ht = c.db.dict
-	//	if ht != nil {
-	//		j := int64(0)
-	//		skip := int64(0)
-	//
-	//		for k := range ht {
-	//			if skip < int64(*cursor) {
-	//				skip++
-	//				continue
-	//			}
-	//			key := interface{}(k)
-	//			listAddNodeTail(keys, &key)
-	//			j++
-	//			if j == count {
-	//				*cursor = uint64(skip + count)
-	//				break
-	//			}
-	//		}
-	//	}
-	//
-	//	addReplyMultiBulkLen(c, 2)
-	//	if listLength(keys) != 0 {
-	//		addReplyLongLong(c, int64(*cursor))
-	//	} else {
-	//		addReplyLongLong(c, 0)
-	//	}
-	//
-	//	addReplyMultiBulkLen(c, listLength(keys))
-	//	for true {
-	//		node := listFirst(keys)
-	//		if node == nil {
-	//			break
-	//		}
-	//		s := (*node.value).(string)
-	//		o := createEmbeddedStringObject(&s, len(s))
-	//		addReplyBulk(c, o)
-	//		listDelNode(keys, node)
-	//	}
-	//
-	//cleanup:
-	//	//清理资源
-	//	listRelease(&keys)
+	// 默认 count 与 Redis 一致
+	var count int64 = 10
+	var pat string
+	var patlen int
+	usePattern := false
+
+	// SCAN 起始参数下标为 2(命令名 + cursor 之后),HSCAN/SSCAN/ZSCAN 为 3
+	var i uint64
+	if o == nil {
+		i = 2
+	} else {
+		i = 3
+	}
+
+	// Step 1: 解析 COUNT / MATCH
+	for i < c.argc {
+		j := c.argc - i
+		opt := (*c.argv[i].ptr).(string)
+		if strings.EqualFold(opt, "count") && j >= 2 {
+			if !getLongFromObjectOrReply(c, c.argv[i+1], &count, nil) {
+				return
+			}
+			if count < 1 {
+				addReply(c, shared.syntaxerr)
+				return
+			}
+			i += 2
+		} else if strings.EqualFold(opt, "match") && j >= 2 {
+			pat = (*c.argv[i+1].ptr).(string)
+			patlen = len(pat)
+			// 与 Redis 一致:模式恰为 "*" 时跳过过滤
+			usePattern = !(patlen == 1 && pat[0] == '*')
+			i += 2
+		} else {
+			addReply(c, shared.syntaxerr)
+			return
+		}
+	}
+
+	// Step 2: 反复调用 dictScan 收集 key
+	keys := make([]string, 0, count)
+	// 闭包形式的回调,append 后写回 keys slice
+	collect := func(privdata interface{}, de *dictEntry) {
+		kp := privdata.(*[]string)
+		*kp = append(*kp, (*de.key.ptr).(string))
+	}
+
+	if c.db != nil {
+		// 哈希表稀疏时单步 dictScan 可能取不到元素,设置上限避免长阻塞
+		maxIterations := count * 10
+		for {
+			*cursor = dictScan(&c.db.dict, *cursor, collect, &keys)
+			if *cursor == 0 {
+				break
+			}
+			maxIterations--
+			if maxIterations <= 0 {
+				break
+			}
+			if int64(len(keys)) >= count {
+				break
+			}
+		}
+	}
+
+	// Step 3: 按 MATCH 模式过滤
+	if usePattern {
+		filtered := keys[:0]
+		for _, k := range keys {
+			if stringmatchlen(pat, patlen, k, len(k), 0) {
+				filtered = append(filtered, k)
+			}
+		}
+		keys = filtered
+	}
+
+	// Step 4: 回复 [cursor, [keys...]]
+	addReplyMultiBulkLen(c, 2)
+	addReplyBulkLongLong(c, int64(*cursor))
+	addReplyMultiBulkLen(c, int64(len(keys)))
+	for _, k := range keys {
+		kCopy := k
+		obj := createEmbeddedStringObject(&kCopy, len(kCopy))
+		addReplyBulk(c, obj)
+	}
 }

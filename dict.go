@@ -402,3 +402,98 @@ func _dictNextPower(size uint64) uint64 {
 	}
 	return uint64(i)
 }
+
+// dictSize 返回字典中元素总数(包含两个哈希表)
+func dictSize(d *dict) uint64 {
+	return d.ht[0].used + d.ht[1].used
+}
+
+// rev 对 64 位整数做按位反转
+// 与 Redis dict.c rev() 等价:用于 dictScan 的反向二进制游标递增
+func rev(v uint64) uint64 {
+	s := uint64(64)
+	mask := ^uint64(0)
+	for s >>= 1; s > 0; s >>= 1 {
+		mask ^= mask << s
+		v = ((v >> s) & mask) | ((v << s) & ^mask)
+	}
+	return v
+}
+
+// dictScanFunction 是 dictScan 回调函数签名
+// privdata 由调用方透传(通常携带用于收集结果的容器与上下文)
+// de 是当前迭代到的字典 entry
+type dictScanFunction func(privdata interface{}, de *dictEntry)
+
+// dictScan 使用反向二进制迭代游标遍历字典
+//
+// 1) 初次调用 cursor 传 0
+// 2) 函数完成一步迭代后返回下一次的 cursor,直到返回 0 表示遍历完成
+// 3) 在 rehash 进行中也能安全使用,可能少量重复但不会漏元素
+//
+// 算法思路与 Redis dict.c dictScan 一致:
+//   - 非 rehash:对 ht[0][cursor & sizemask] 桶上所有 entry 触发回调,然后做反向递增
+//   - rehash:先扫小表对应桶,再扫大表中由小表桶扩展出的所有桶,在大表内部反向递增直到落出扩展区
+func dictScan(d *dict, v uint64, fn dictScanFunction, privdata interface{}) uint64 {
+	if dictSize(d) == 0 {
+		return 0
+	}
+
+	if !dictIsRehashing(d) {
+		t0 := &d.ht[0]
+		m0 := uint64(t0.sizemask)
+
+		// 触发 cursor 对应桶上所有 entry 的回调
+		de := (*t0.table)[v&m0]
+		for de != nil {
+			fn(privdata, de)
+			de = de.next
+		}
+
+		// 反向二进制递增:高位置 1 → 位反转 → +1 → 再位反转
+		v |= ^m0
+		v = rev(v)
+		v++
+		v = rev(v)
+	} else {
+		t0 := &d.ht[0]
+		t1 := &d.ht[1]
+
+		// 始终让 t0 是较小的表、t1 是较大的表
+		if t0.size > t1.size {
+			t0, t1 = t1, t0
+		}
+
+		m0 := uint64(t0.sizemask)
+		m1 := uint64(t1.sizemask)
+
+		// 先在小表对应桶上触发回调
+		de := (*t0.table)[v&m0]
+		for de != nil {
+			fn(privdata, de)
+			de = de.next
+		}
+
+		// 再扫大表中由当前小表桶扩展出来的所有桶
+		for {
+			de := (*t1.table)[v&m1]
+			for de != nil {
+				fn(privdata, de)
+				de = de.next
+			}
+
+			// 在大表 mask 上做反向递增
+			v |= ^m1
+			v = rev(v)
+			v++
+			v = rev(v)
+
+			// 直到反向递增越过扩展位(小表桶范围内迭代完成)
+			if v&(m0^m1) == 0 {
+				break
+			}
+		}
+	}
+
+	return v
+}
