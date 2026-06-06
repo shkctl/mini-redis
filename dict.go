@@ -425,17 +425,35 @@ func dictSize(d *dict) uint64 {
 
 // 反转二进制位
 func rev(v uint64) uint64 {
+	//获取待翻转的数的二进制位
 	s := uint64(64) // 8 * sizeof(uint64)
+	//获得一个全1的掩码,注意:^运算 在go语言中为取反运算
 	mask := ^uint64(0)
+	//二进制位除2,步入下面的循环进行二分翻转,例如二进制0000 1111,对应除2的位为4,第一轮翻转结果为1111 0000
 	s >>= 1
 	for s > 0 {
+		//获得低位全1的掩码,例如1111 1111 经过移位+异或运算获得0000 1111
 		mask ^= (mask << s)
+		/**
+		 进行高低位翻转,假设传入v:0000 1111,对应位数为8,s位2,对应执行步骤为:
+		(v >> s) & mask => (0000 1111>>4) & 0000 1111=> 0000 0000 & 0000 1111 => 0000 0000
+		 (v << s) & ^mask => (0000 1111<<4) & 1111 0000=> 1111 0000 & 1111 0000 => 1111 0000
+		最终两个抑或运算,获得 1111 0000 完成4位翻转
+
+		*/
 		v = ((v >> s) & mask) | ((v << s) & ^mask)
 		s >>= 1
 	}
 	return v
 }
 
+/**
+ * 扫描字典元素并存入字典
+ * @param d 字典
+ * @param v 扫描起始位置
+ * @param fn 回调函数 本次传入的是scanCallback
+ * @param privData 回调函数的参数,我们只需要知道数组0为链表即可
+ */
 func dictScan(d *dict,
 	v int64,
 	fn dictScanFunction,
@@ -444,68 +462,72 @@ func dictScan(d *dict,
 	var t0, t1 *dictht
 	var de *dictEntry
 	var m0, m1 int64
-
+	//若字典为空直接返回
 	if dictSize(d) == 0 {
 		return 0
 	}
-
+	//非渐进式哈希,直接扫描数组0
 	if !dictIsRehashing(d) {
 		t0 = &(d.ht[0])
 		m0 = int64(t0.sizemask)
-
+		//定位具体bucket
 		de = (*t0.table)[v&m0]
-
+		//若bucket非空,通过回调函数fn将元素值存入链表中
 		for de != nil {
 			fn(privData, de)
 			de = de.next
 		}
-
+		/**
+		通过取反+抑或,将所有无意义的高位设置为1,为后续反向递进做铺垫:
+		例如: v 为0010 m为0011,对应计算步骤为:
+		^m= 1100
+		v=v|^m 最终获得 1110 ,可以看到这个值保留了v 0010的1 同时将高位都设置为1,就可以顺利进行反向递进,再翻转,获得桶内部的坐标
+		*/
 		v |= ^m0
 
 		v = int64(rev(uint64(v)))
 		v++
 		v = int64(rev(uint64(v)))
 	} else {
+		//渐进式哈希场景:ht[0] 与 ht[1] 同时存在,需要把两张表都扫到
 		t0 = &(d.ht[0])
 		t1 = &(d.ht[1])
 
-		if t0.used > t1.used {
-			t1 = &(d.ht[0])
+		//算法前置条件:t0 必须是小表、t1 必须是大表,保证扫描走到for循环的反向递增扫荡逻辑避免漏扫
+		if t0.size > t1.size {
 			t0 = &(d.ht[1])
+			t1 = &(d.ht[0])
 		}
 
 		m0 = int64(t0.sizemask)
 		m1 = int64(t1.sizemask)
 
+		//小表只扫 v 对应的那 1 个 bucket
 		de = (*t0.table)[v&m0]
-
 		for de != nil {
 			fn(privData, de)
 			de = de.next
 		}
 
+		//大表扫描所有"低位与 v&m0 一致"的若干 bucket
 		for {
-			de = (*t0.table)[v&m1]
-
+			de = (*t1.table)[v&m1]
 			for de != nil {
 				fn(privData, de)
 				de = de.next
 			}
 
+			//在大表 mask 空间里做一次反向二进制 +1
 			v |= ^m1
-
-			v |= ^m1
-
 			v = int64(rev(uint64(v)))
 			v++
 			v = int64(rev(uint64(v)))
 
+			//差异位 m0^m1 全部归 0 时,v 已推进到下一个小表 bucket,可退出
 			if v&(m0^m1) == 0 {
 				break
 			}
-
 		}
-
 	}
 
 	return v

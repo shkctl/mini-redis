@@ -771,7 +771,9 @@ func scanGenericCommand(c *redisClient, o *robj, cursor *int64) {
 		maxiterations = count * 10
 
 		for {
+			//扫荡元素写入链表
 			*cursor = dictScan(ht, *cursor, scanCallback, privateData)
+			//迭代次数更新
 			maxiterations--
 
 			if *cursor == 0 || maxiterations <= 0 || listLength(keys) >= count {
@@ -779,23 +781,22 @@ func scanGenericCommand(c *redisClient, o *robj, cursor *int64) {
 			}
 
 		}
-
+		//遍历链表元素
 		node = listFirst(keys)
 		for node != nil {
 			nextNode = listNextNode(node)
 			kobj := (*node.value).(*robj)
 
 			filter := false
-
+			//若存在匹配模式,且元素与匹配模式不匹配,则过滤该元素,将filter设置为true
 			if use_pattern && re.MatchString((*kobj.ptr).(string)) == false {
-
 				filter = true
 			}
-
+			//若元素过期,也过滤
 			if !filter && expireIfNeeded(c.db, kobj) == 1 {
 				filter = true
 			}
-
+			//从链表删除待过滤的元素
 			if filter {
 				listDelNode(keys, node)
 			}
@@ -805,7 +806,7 @@ func scanGenericCommand(c *redisClient, o *robj, cursor *int64) {
 		}
 
 	}
-
+	//输出相应结果
 	addReplyMultiBulkLen(c, 2)
 	addReplyLongLong(c, *cursor)
 	addReplyMultiBulkLen(c, listLength(keys))
