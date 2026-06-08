@@ -69,6 +69,7 @@ PONG
 + [x] 字典操作HSET、HMSET、HSETNX、HGET、HMGET、HGETALL、HDEL指令开发
 + [x] 有序集合所有操作指令开发
 + [x] 慢查询日志（Slowlog）功能开发
++ [x] Scan 功能开发
 + [ ] `AOF`持久化和重载机制
 + [ ] `LRU`缓存置换算法
 + [ ] 性能压测
@@ -135,6 +136,8 @@ mini-redis复刻Redis的INCR指令:<https://mp.weixin.qq.com/s/BwACqJvE8krYA-dgl
 基于AI IDE的mini-redis列表操作测试用例设计与功能验收:<https://mp.weixin.qq.com/s/fpWU_MgOq-1je5TijtBGHQ>
 
 基于 Claude Code 复刻 Redis 慢查询指令实践:<https://mp.weixin.qq.com/s/mt19kS8CMijuCukzCDkIxQ>
+
+mini-redis SCAN指令复刻：自底向上的工程方法论实践:<https://mp.weixin.qq.com/s/vlChmUNJ4lmRFIO6Dx98qA>
 
 ## 关于我
 

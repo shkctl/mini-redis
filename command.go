@@ -3,7 +3,6 @@ package main
 import (
 	"log"
 	"math"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -707,15 +706,12 @@ func scanGenericCommand(c *redisClient, o *robj, cursor *int64) {
 	var i, j int
 	keys := listCreate()
 	var node, nextNode *listNode
-	var re *regexp.Regexp
 
 	var count int64
 	count = 10
 
 	var pat string
-	//var patLen int
-
-	var use_pattern bool
+	var usePattern bool
 
 	var ht *dict
 
@@ -741,14 +737,8 @@ func scanGenericCommand(c *redisClient, o *robj, cursor *int64) {
 			i += 2
 		} else if strings.EqualFold((*c.argv[i].ptr).(string), "match") && j >= 2 {
 			pat = (*c.argv[i+1].ptr).(string)
-			//patLen = len(pat)
-
-			if pat == "*" {
-				use_pattern = false
-			} else {
-				use_pattern = true
-				re = regexp.MustCompile(pat)
-			}
+			// 单一 "*" 等价于不过滤,跳过逐元素匹配开销
+			usePattern = !(len(pat) == 1 && pat[0] == '*')
 			i += 2
 		} else {
 			addReply(c, shared.syntaxerr)
@@ -789,7 +779,7 @@ func scanGenericCommand(c *redisClient, o *robj, cursor *int64) {
 
 			filter := false
 			//若存在匹配模式,且元素与匹配模式不匹配,则过滤该元素,将filter设置为true
-			if use_pattern && re.MatchString((*kobj.ptr).(string)) == false {
+			if usePattern && !stringmatch(pat, (*kobj.ptr).(string), false) {
 				filter = true
 			}
 			//若元素过期,也过滤
@@ -806,19 +796,22 @@ func scanGenericCommand(c *redisClient, o *robj, cursor *int64) {
 		}
 
 	}
-	//输出相应结果
+	//按照RESP协议输出长度为2,数组0记录游标,数组1记录元素个数
 	addReplyMultiBulkLen(c, 2)
+	//输出下一次的游标
 	addReplyLongLong(c, *cursor)
+	//数组1输出数组长度+元素
 	addReplyMultiBulkLen(c, listLength(keys))
 
+	//遍历结果集链表并输出
 	for {
-
 		if node = listFirst(keys); node == nil {
 			break
 		}
-
+		//获取链表值并输出
 		kobj := (*node.value).(*robj)
 		addReplyBulk(c, kobj)
+		//删除该链表
 		listDelNode(keys, node)
 	}
 
