@@ -250,7 +250,7 @@ func dictFind(d *dict, key string) *dictEntry {
 		//基于位运算定位索引
 		idx := h & d.ht[i].sizemask
 		//定位到对应bucket桶,通过遍历定位到本次要检索的key
-		he := (*d.ht[0].table)[idx]
+		he := (*d.ht[i].table)[idx]
 		for he != nil {
 			if (*he.key.ptr).(string) == key {
 				return he
@@ -421,6 +421,63 @@ func dictGetVal(he *dictEntry) *robj {
 
 func dictSize(d *dict) uint64 {
 	return d.ht[0].used + d.ht[1].used
+}
+
+/* ============================ 字典顺序迭代器 ============================
+ * 对应 Redis 的 dictGetIterator / dictNext / dictReleaseIterator。
+ * 跨越 ht[0] 与 ht[1] 两张表(渐进式 rehash 时元素分布其中)。
+ *
+ * 安全前提:迭代一个 dict 期间不能修改该 dict(否则 rehash 搬动 bucket 会
+ * 导致漏扫/重复)。本项目集合运算只读迭代源集合、写入独立的 result dict,
+ * 满足此前提,故无需 Redis 的 safe/fingerprint 引用计数机制。
+ */
+type dictIterator struct {
+	d     *dict
+	table int        // 当前所在表:0 或 1
+	index int64      // 当前 bucket 下标,首次调用前为 -1
+	entry *dictEntry // 当前正在返回的 entry
+	next  *dictEntry // entry 的后继(预先保存,避免迭代中被改链)
+}
+
+func dictGetIterator(d *dict) *dictIterator {
+	return &dictIterator{d: d, table: 0, index: -1}
+}
+
+func dictReleaseIterator(it *dictIterator) {}
+
+// dictNext 返回下一个 entry;遍历完毕返回 nil。
+func dictNext(it *dictIterator) *dictEntry {
+	for {
+		// 先沿当前桶链表前进
+		if it.entry != nil {
+			it.entry = it.next
+			if it.entry != nil {
+				it.next = it.entry.next
+				return it.entry
+			}
+		}
+		// 链表走完,在当前表里找下一个非空 bucket
+		for {
+			ht := &it.d.ht[it.table]
+			it.index++
+			if uint64(it.index) < ht.size && ht.table != nil {
+				e := (*ht.table)[it.index]
+				if e != nil {
+					it.entry = e
+					it.next = e.next
+					return e
+				}
+				continue // 空 bucket,继续扫
+			}
+			// 当前表已扫尽:若正在 rehash 且 ht[0] 刚扫完,转到 ht[1]
+			if dictIsRehashing(it.d) && it.table == 0 {
+				it.table = 1
+				it.index = -1
+				continue
+			}
+			return nil
+		}
+	}
 }
 
 // 反转二进制位

@@ -161,34 +161,27 @@ func TestDictRehash(t *testing.T) {
 	d := dictCreate(&dbDictType, nil)
 	bucketMap := createHashBucketMap()
 
-	count := 0
-
+	// 取同一桶里的若干 key 触发扩容/渐进式 rehash，并记录实际添加的 key
+	var keys []string
 	for _, v := range (*bucketMap)[0] {
 		dictAdd(d, createStringObject(&v, len(v)), nil)
-		count++
-		if count == 4 {
+		keys = append(keys, v)
+		if len(keys) == 4 {
 			break
 		}
 	}
 
-	//sizemask := 7
-	//m := make(map[int][]string)
-	//for i := 0; i < 10000; i++ {
-	//	idx := dictSdsHash(strconv.Itoa(i)) & sizemask
-	//	m[idx] = append(m[idx], strconv.Itoa(i))
-	//}
-	//for key, values := range m {
-	//	fmt.Printf("%d: %v\n", key, len(values))
-	//}
 	k := "1000"
 	dictAdd(d, createStringObject(&k, len(k)), nil)
+	keys = append(keys, k)
 
-	//查看19 17 12 9 1000是否存在
-	if dictFind(d, "19") == nil ||
-		dictFind(d, "17") == nil ||
-		dictFind(d, "12") == nil ||
-		dictFind(d, "9") == nil ||
-		dictFind(d, "1000") == nil {
-		log.Fatal("rehash fail")
+	// 此时应处于渐进式 rehash 中，验证所有 key 仍可在两张表间查到
+	if !dictIsRehashing(d) {
+		t.Fatalf("expected dict to be rehashing, rehashidx=%d", d.rehashidx)
+	}
+	for _, key := range keys {
+		if dictFind(d, key) == nil {
+			t.Fatalf("rehash fail: key %q not found", key)
+		}
 	}
 }

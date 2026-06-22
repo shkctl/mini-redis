@@ -1,8 +1,6 @@
 package main
 
-import (
-	"unsafe"
-)
+import ()
 
 /*Error codes */
 
@@ -23,42 +21,44 @@ func dictSdsHash(key string) int {
 }
 
 func dictGenHashFunction(key string, kLen int) int {
-	var seed int = dict_hash_function_seed
-	var m int = 0x5bd1e995
-	var r int = 24
+	const m uint32 = 0x5bd1e995
+	const r uint32 = 24
 
-	var h int = seed ^ kLen
+	// MurmurHash2：按字节读取，每轮处理 4 个字节
+	data := key
+	h := uint32(dict_hash_function_seed) ^ uint32(kLen)
 
-	runes := []rune(key)
 	pos := 0
-
 	for kLen >= 4 {
-		k := *(*int)(unsafe.Pointer(&runes[pos]))
+		k := uint32(data[pos]) | uint32(data[pos+1])<<8 |
+			uint32(data[pos+2])<<16 | uint32(data[pos+3])<<24
 		k *= m
 		k ^= k >> r
 		k *= m
+		h *= m
 		h ^= k
 
 		pos += 4
 		kLen -= 4
 	}
 
+	// 处理尾部不足 4 字节的部分
 	switch kLen {
 	case 3:
-		h ^= int(runes[2]) << 16
-
+		h ^= uint32(data[pos+2]) << 16
+		fallthrough
 	case 2:
-		h ^= int(runes[1]) << 8
-
+		h ^= uint32(data[pos+1]) << 8
+		fallthrough
 	case 1:
-		h ^= int(runes[0])
+		h ^= uint32(data[pos])
 		h *= m
 	}
 
 	h ^= h >> 13
 	h *= m
 	h ^= h >> 15
-	return h
+	return int(h)
 
 }
 
