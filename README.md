@@ -56,6 +56,9 @@ PONG
 - 完成哈希HSET、HMSET、HSETNX、HGET、HMGET、HGETALL、HDEL指令开发
 - 完成有序集合ZADD、ZREM、ZRANGE、ZREVRANGE、ZRANGEBYSCORE等指令开发
 - 完成慢查询日志（Slowlog）功能，支持SLOWLOG GET/RESET/LEN指令
+- 完成SCAN指令开发，支持glob模式匹配与渐进式遍历
+- 完成集合SADD、SREM、SMEMBERS、SISMEMBER、SCARD、SPOP、SINTER(STORE)、SUNION(STORE)、SDIFF(STORE)等指令开发
+- 完成intset整数集合底层数据结构（按需位宽，提升内存利用与访问性能）
 
 
 后续开发计划:
@@ -70,6 +73,8 @@ PONG
 + [x] 有序集合所有操作指令开发
 + [x] 慢查询日志（Slowlog）功能开发
 + [x] Scan 功能开发
++ [x] 集合（Set）所有操作指令开发
++ [x] intset 整数集合底层数据结构开发
 + [ ] `AOF`持久化和重载机制
 + [ ] `LRU`缓存置换算法
 + [ ] 性能压测
@@ -84,8 +89,12 @@ PONG
 - `command.go` : redis所有操作指令实现
 - `command_test.go` : 命令测试单元
 - `db.go` : redis内存数据库
-- `dict.go` : 哈希对象操作实现
+- `dict.go` : 哈希对象操作实现（含渐进式 rehash 顺序迭代器）
 - `dict_test.go` : 字典测试单元
+- `dict_bench_test.go` : 字典与 Go map 性能对比基准测试
+- `intset.go` : 整数集合底层实现（按需位宽）
+- `intset_test.go` : 整数集合测试单元
+- `intset_bench_test.go` : 整数集合性能基准测试
 - `networking.go` : 网络操作函数集
 - `object.go` : redis对象创建函数
 - `redis.conf` : 配置文件
@@ -95,6 +104,8 @@ PONG
 - `slowlog_test.go` : 慢查询日志测试单元
 - `t_hash.go` : 针对redis对象的哈希操作函数
 - `t_list.go` : 基于adlist双向链表对于redis对象的链表操作函数
+- `t_set.go` : 集合操作函数实现（dict/intset 双编码）
+- `t_set_test.go` : 集合测试单元
 - `t_zset.go` : 有序集合操作函数实现
 - `t_zset_test.go` : 有序集合测试单元
 - `util.go` : mini-redis工具类
