@@ -150,6 +150,8 @@ mini-redis复刻Redis的INCR指令:<https://mp.weixin.qq.com/s/BwACqJvE8krYA-dgl
 
 mini-redis SCAN指令复刻：自底向上的工程方法论实践:<https://mp.weixin.qq.com/s/vlChmUNJ4lmRFIO6Dx98qA>
 
+聊一聊我是怎么审查 Claude Code 写的代码：记一次复刻 Redis Set 审查随笔:<https://mp.weixin.qq.com/s/rAK4T5N-BvFBuVMLGDc0Mw>
+
 ## 关于我
 
 你好，我是 **SharkChili** ，禅与计算机程序设计艺术布道者，希望我的理念对您有所启发。
